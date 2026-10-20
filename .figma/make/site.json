@@ -1,0 +1,10 @@
+{
+  "description": "An AI-powered career readiness platform that helps university students and job seekers enhance their interview skills, analyze resumes, and track career progress.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
