@@ -38,6 +38,9 @@ import {
   X,
   Zap,
 } from "lucide-react"
+import { completeInterviewSession, createInterviewSession, saveInterviewAnswer } from "@/lib/interviews"
+import { isSupabaseConfigured } from "@/lib/supabase"
+import { MockInterviewModule } from "./modules/mock-interview/MockInterviewModule"
 
 type Page =
   | "dashboard"
@@ -667,6 +670,58 @@ function InterviewPage() {
   const [index, setIndex] = useState(0)
   const [answer, setAnswer] = useState("")
   const [recording, setRecording] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [databaseError, setDatabaseError] = useState("")
+  const totalQuestions = Math.min(Number.parseInt(count, 10), questions.length)
+  const activeQuestions = questions.slice(0, totalQuestions)
+
+  const databaseType = (): "hr" | "behavioral" | "technical" => {
+    if (type === "HR") return "hr"
+    if (type === "Technical") return "technical"
+    return "behavioral"
+  }
+
+  const startInterview = async () => {
+    setSaving(true)
+    setDatabaseError("")
+    try {
+      const newSessionId = await createInterviewSession({
+        role,
+        interviewType: databaseType(),
+        totalQuestions,
+        questions: activeQuestions,
+      })
+      setSessionId(newSessionId)
+      setIndex(0)
+      setAnswer("")
+      setPhase("room")
+    } catch (error) {
+      setDatabaseError(error instanceof Error ? error.message : "Tidak dapat mencipta sesi interview.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const submitAnswer = async () => {
+    if (!sessionId) return
+    setSaving(true)
+    setDatabaseError("")
+    try {
+      await saveInterviewAnswer(sessionId, index + 1, answer)
+      setAnswer("")
+      if (index === totalQuestions - 1) {
+        await completeInterviewSession(sessionId)
+        setPhase("complete")
+      } else {
+        setIndex(index + 1)
+      }
+    } catch (error) {
+      setDatabaseError(error instanceof Error ? error.message : "Jawapan tidak dapat disimpan.")
+    } finally {
+      setSaving(false)
+    }
+  }
   if (phase === "complete") {
     return (
       <div className="completion-page">
@@ -693,12 +748,12 @@ function InterviewPage() {
         </div>
         <Card className="interview-room">
           <div className="question-progress">
-            <span>Question {index + 1} of 5</span><span>{Math.round(((index + 1) / 5) * 100)}%</span>
+            <span>Question {index + 1} of {totalQuestions}</span><span>{Math.round(((index + 1) / totalQuestions) * 100)}%</span>
           </div>
-          <Progress value={((index + 1) / 5) * 100} tone="violet" />
+          <Progress value={((index + 1) / totalQuestions) * 100} tone="violet" />
           <div className="question-area">
             <span className="question-number">0{index + 1}</span>
-            <div><p>INTERVIEW QUESTION</p><h2>{questions[index]}</h2><small>Take a moment to structure your answer. Try using the STAR framework.</small></div>
+            <div><p>INTERVIEW QUESTION</p><h2>{activeQuestions[index]}</h2><small>Take a moment to structure your answer. Try using the STAR framework.</small></div>
           </div>
           <label className="answer-field">
             <span>Your answer</span>
@@ -713,13 +768,10 @@ function InterviewPage() {
             {recording && <span className="record-time">00:18</span>}
           </div>
           <div className="interview-controls">
-            <Button variant="danger" onClick={() => setPhase("setup")}>End interview</Button>
-            <Button onClick={() => {
-              setAnswer("")
-              if (index === 4) setPhase("complete")
-              else setIndex(index + 1)
-            }}>{index === 4 ? "Submit interview" : "Submit & next"} <ArrowRight size={16} /></Button>
+            <Button variant="danger" disabled={saving} onClick={() => setPhase("setup")}>End interview</Button>
+            <Button disabled={saving} onClick={submitAnswer}>{saving ? "Saving…" : index === totalQuestions - 1 ? "Submit interview" : "Submit & next"} <ArrowRight size={16} /></Button>
           </div>
+          {databaseError && <p className="text-danger mt-4">{databaseError}</p>}
         </Card>
       </>
     )
@@ -727,7 +779,7 @@ function InterviewPage() {
   return (
     <>
       <PageIntro eyebrow="Module 3 · Practise" title="Practise with purpose" description="Configure a realistic interview session and build confidence one answer at a time." />
-      <div className="prototype-note"><ShieldCheck size={17} /><span>This prototype uses sample questions and simulated recording controls. No audio transcription or real AI evaluation is connected.</span></div>
+      <div className="prototype-note"><ShieldCheck size={17} /><span>{isSupabaseConfigured ? "Sesi dan jawapan teks akan disimpan ke Supabase. Audio transcription and AI evaluation are not connected yet." : "Sambungkan Supabase dengan VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY untuk menyimpan sesi sebenar."}</span></div>
       <div className="content-grid wide-left">
         <Card title="Set up your interview">
           <div className="interview-type-grid">
@@ -746,7 +798,8 @@ function InterviewPage() {
             <SelectField label="Difficulty" value={difficulty} onChange={setDifficulty} options={["Beginner", "Intermediate", "Advanced"]} />
             <SelectField label="Number of questions" value={count} onChange={setCount} options={["3 questions", "5 questions", "8 questions"]} />
           </div>
-          <Button className="mt-6" onClick={() => { setIndex(0); setPhase("room") }}><Play size={16} /> Enter interview room</Button>
+          <Button className="mt-6" disabled={saving || !isSupabaseConfigured} onClick={startInterview}><Play size={16} /> {saving ? "Creating session…" : "Enter interview room"}</Button>
+          {databaseError && <p className="text-danger mt-4">{databaseError}</p>}
         </Card>
         <div className="stack">
           <Card className="session-preview">
@@ -938,7 +991,7 @@ function App() {
     dashboard: <Dashboard navigate={navigate} />,
     profile: <ProfilePage />,
     resume: <ResumePage />,
-    interview: <InterviewPage />,
+    interview: <MockInterviewModule onNavigateTab={(tab) => navigate(tab as Page)} />,
     assessment: <AssessmentPage />,
     learning: <LearningPage />,
     progress: <ProgressPage />,
